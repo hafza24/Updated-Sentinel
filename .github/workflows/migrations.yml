@@ -1,0 +1,77 @@
+name: Migrations CI
+
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - ".github/workflows/migrations.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+
+jobs:
+  lint-and-replay:
+    name: Lint & replay migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sentinel_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGPASSWORD: postgres
+      PGHOST: localhost
+      PGUSER: postgres
+      PGDATABASE: sentinel_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql + sqlfluff
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+          pip install sqlfluff==3.2.5
+
+      - name: Lint migrations (sqlfluff, postgres dialect)
+        run: |
+          if [ -d supabase/migrations ]; then
+            sqlfluff lint --dialect postgres supabase/migrations || true
+          fi
+
+      - name: Bootstrap extensions & required roles
+        run: |
+          psql -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          psql -c "CREATE EXTENSION IF NOT EXISTS pg_net;" || true
+          psql -c "CREATE EXTENSION IF NOT EXISTS pg_cron;" || true
+          # Stub Supabase-only schemas so migrations referencing them don't fail
+          psql -c "CREATE SCHEMA IF NOT EXISTS auth;"
+          psql -c "CREATE SCHEMA IF NOT EXISTS realtime;"
+          psql -c "CREATE SCHEMA IF NOT EXISTS storage;"
+          psql -c "CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text);"
+          psql -c "CREATE TABLE IF NOT EXISTS realtime.messages (id bigserial PRIMARY KEY, topic text);"
+          psql -c "CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS \$\$ SELECT NULL::uuid \$\$;"
+          psql -c "CREATE OR REPLACE FUNCTION realtime.topic() RETURNS text LANGUAGE sql STABLE AS \$\$ SELECT ''::text \$\$;"
+
+      - name: Replay migrations in order
+        run: |
+          set -e
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "▶ applying $f"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Verify schema sanity
+        run: |
+          psql -c "\dt public.*"
+          psql -c "SELECT count(*) AS public_tables FROM information_schema.tables WHERE table_schema='public';"

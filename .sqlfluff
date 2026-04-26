@@ -1,0 +1,17 @@
+# SQLFluff config for Supabase migrations
+[sqlfluff]
+dialect = postgres
+templater = raw
+exclude_rules = L009, L016, L031, L034, L036, L042, L044
+max_line_length = 200
+
+[sqlfluff:indentation]
+indented_joins = false
+indented_using_on = true
+template_blocks_indent = false
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
