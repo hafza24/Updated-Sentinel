@@ -4,15 +4,17 @@ import {
   Lock,
   RotateCcw,
   RefreshCw,
-  WifiOff,
-  Wifi,
   Loader2,
   Monitor,
   CheckCircle2,
   Clock,
   XCircle,
+  Radio,
+  Square,
+  Power,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { issueDeviceCommand, type SupportedDeviceCommandType } from "@/lib/device-command-api";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +31,7 @@ export const Route = createFileRoute("/_authed/device-control")({
   component: DeviceControlPage,
 });
 
-type CommandType = "lock_device" | "restart_agent" | "force_sync" | "disable_network" | "enable_network";
+type CommandType = SupportedDeviceCommandType;
 type CommandStatus = "pending" | "acknowledged" | "completed" | "failed";
 
 interface DeviceRow {
@@ -58,9 +60,10 @@ const ACTIONS: {
 }[] = [
   { type: "force_sync", label: "Force sync", Icon: RefreshCw, variant: "secondary" },
   { type: "restart_agent", label: "Restart agent", Icon: RotateCcw, variant: "secondary" },
-  { type: "disable_network", label: "Kill network", Icon: WifiOff, variant: "destructive" },
-  { type: "enable_network", label: "Restore network", Icon: Wifi, variant: "default" },
+  { type: "start_stream", label: "Start share", Icon: Radio, variant: "secondary" },
+  { type: "stop_stream", label: "Stop share", Icon: Square, variant: "secondary" },
   { type: "lock_device", label: "Lock device", Icon: Lock, variant: "destructive" },
+  { type: "shutdown_device", label: "Shutdown", Icon: Power, variant: "destructive" },
 ];
 
 const STATUS_STYLE: Record<CommandStatus, string> = {
@@ -78,7 +81,7 @@ const STATUS_ICON: Record<CommandStatus, typeof Clock> = {
 };
 
 function DeviceControlPage() {
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, session } = useAuth();
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [commands, setCommands] = useState<CommandRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,16 +129,15 @@ function DeviceControlPage() {
   }, []);
 
   const issue = async (deviceId: string, type: CommandType) => {
-    if (!user) return;
     setBusy(`${deviceId}:${type}`);
-    const { error } = await supabase.from("device_commands").insert({
-      device_id: deviceId,
-      command_type: type,
-      issued_by: user.id,
-    });
-    setBusy(null);
-    if (error) toast.error(error.message);
-    else toast.success(`Queued: ${type.replace("_", " ")}`);
+    try {
+      await issueDeviceCommand(session, { deviceId, commandType: type });
+      toast.success(`Queued: ${type.replace("_", " ")}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to queue command");
+    } finally {
+      setBusy(null);
+    }
   };
 
   if (!isAdmin) {
@@ -152,7 +154,7 @@ function DeviceControlPage() {
         <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-primary">REMOTE OPS</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">Device control</h1>
         <p className="text-sm text-muted-foreground">
-          Send commands to agents. They are picked up on the next sync cycle (~30s) and acknowledged in real time.
+          Send validated, auditable commands to agents. Commands are picked up on the next sync cycle and acknowledged in real time.
         </p>
       </div>
 

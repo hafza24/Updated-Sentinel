@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Search, Bell, BellOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authed/alerts")({
   head: () => ({
     meta: [
-      { title: "Alerts — Sentinel Net" },
+      { title: "Alerts - Sentinel Net" },
       { name: "description", content: "Real-time security event log from agents in the field." },
     ],
   }),
@@ -45,8 +45,7 @@ function loadReadSet(): Set<string> {
   try {
     const raw = window.localStorage.getItem(READ_KEY);
     if (!raw) return new Set();
-    const arr = JSON.parse(raw) as string[];
-    return new Set(arr);
+    return new Set(JSON.parse(raw) as string[]);
   } catch {
     return new Set();
   }
@@ -55,11 +54,10 @@ function loadReadSet(): Set<string> {
 function persistReadSet(set: Set<string>) {
   if (typeof window === "undefined") return;
   try {
-    // Cap to last 1000 ids
     const arr = Array.from(set).slice(-1000);
     window.localStorage.setItem(READ_KEY, JSON.stringify(arr));
   } catch {
-    /* ignore */
+    // Ignore local storage failures.
   }
 }
 
@@ -69,7 +67,15 @@ function AlertsPage() {
   const [filter, setFilter] = useState<"all" | Severity | "unread">("all");
   const [search, setSearch] = useState("");
   const [readIds, setReadIds] = useState<Set<string>>(() => loadReadSet());
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const recentToastSignaturesRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
 
   useEffect(() => {
     (async () => {
@@ -78,8 +84,13 @@ function AlertsPage() {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(300);
-      if (error) toast.error(error.message);
-      else setAlerts((data as Alert[]) ?? []);
+      if (error) {
+        toast.error(error.message);
+      } else {
+        const initialAlerts = (data as Alert[]) ?? [];
+        setAlerts(initialAlerts);
+        seenIdsRef.current = new Set(initialAlerts.map((alert) => alert.id));
+      }
       setLoading(false);
     })();
 
@@ -90,14 +101,40 @@ function AlertsPage() {
         { event: "INSERT", schema: "public", table: "alerts" },
         (payload) => {
           const next = payload.new as Alert;
+          if (seenIdsRef.current.has(next.id)) return;
+
+          seenIdsRef.current.add(next.id);
           setAlerts((prev) => [next, ...prev].slice(0, 300));
-          if (muted) return;
+          setNewIds((prev) => {
+            const updated = new Set(prev);
+            updated.add(next.id);
+            return updated;
+          });
+
+          if (mutedRef.current) return;
+
+          const signature = [
+            next.device_id ?? "unknown",
+            next.severity,
+            next.action_type,
+            next.target ?? "",
+          ].join("|");
+          const now = Date.now();
+          const lastShownAt = recentToastSignaturesRef.current.get(signature);
+          if (lastShownAt && now - lastShownAt < 10_000) return;
+
+          recentToastSignaturesRef.current.set(signature, now);
+          if (recentToastSignaturesRef.current.size > 250) {
+            for (const [key, shownAt] of recentToastSignaturesRef.current.entries()) {
+              if (now - shownAt > 60_000) recentToastSignaturesRef.current.delete(key);
+            }
+          }
+
+          const label = `${next.action_type}${next.target ? ` -> ${next.target}` : ""}`;
           if (next.severity === "critical") {
-            toast.error(
-              `Critical: ${next.action_type}${next.target ? ` → ${next.target}` : ""}`,
-            );
+            toast.error(`Critical: ${label}`);
           } else if (next.severity === "warning") {
-            toast.warning(`${next.action_type}${next.target ? ` → ${next.target}` : ""}`);
+            toast.warning(label);
           }
         },
       )
@@ -106,30 +143,33 @@ function AlertsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [muted]);
+  }, []);
 
-  const stats = useMemo(() => {
-    return {
+  const stats = useMemo(
+    () => ({
       total: alerts.length,
-      critical: alerts.filter((a) => a.severity === "critical").length,
-      warning: alerts.filter((a) => a.severity === "warning").length,
-      unread: alerts.filter((a) => !readIds.has(a.id)).length,
-    };
-  }, [alerts, readIds]);
+      critical: alerts.filter((alert) => alert.severity === "critical").length,
+      warning: alerts.filter((alert) => alert.severity === "warning").length,
+      unread: alerts.filter((alert) => !readIds.has(alert.id)).length,
+      fresh: alerts.filter((alert) => newIds.has(alert.id)).length,
+    }),
+    [alerts, newIds, readIds],
+  );
 
   const filtered = useMemo(() => {
     let out = alerts;
-    if (filter === "unread") out = out.filter((a) => !readIds.has(a.id));
-    else if (filter !== "all") out = out.filter((a) => a.severity === filter);
+    if (filter === "unread") out = out.filter((alert) => !readIds.has(alert.id));
+    else if (filter !== "all") out = out.filter((alert) => alert.severity === filter);
+
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
+      const query = search.trim().toLowerCase();
       out = out.filter(
-        (a) =>
-          a.action_type.toLowerCase().includes(q) ||
-          (a.target ?? "").toLowerCase().includes(q),
+        (alert) =>
+          alert.action_type.toLowerCase().includes(query) ||
+          (alert.target ?? "").toLowerCase().includes(query),
       );
     }
+
     return out;
   }, [alerts, filter, search, readIds]);
 
@@ -141,15 +181,22 @@ function AlertsPage() {
       persistReadSet(next);
       return next;
     });
+    setNewIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   const markAllRead = () => {
     setReadIds((prev) => {
       const next = new Set(prev);
-      alerts.forEach((a) => next.add(a.id));
+      alerts.forEach((alert) => next.add(alert.id));
       persistReadSet(next);
       return next;
     });
+    setNewIds(new Set());
     toast.success("All alerts marked as read");
   };
 
@@ -167,10 +214,14 @@ function AlertsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setMuted((m) => !m)}
+            onClick={() => setMuted((prev) => !prev)}
             title={muted ? "Unmute toast notifications" : "Mute toast notifications"}
           >
-            {muted ? <BellOff className="mr-1.5 h-3.5 w-3.5" /> : <Bell className="mr-1.5 h-3.5 w-3.5" />}
+            {muted ? (
+              <BellOff className="mr-1.5 h-3.5 w-3.5" />
+            ) : (
+              <Bell className="mr-1.5 h-3.5 w-3.5" />
+            )}
             {muted ? "Muted" : "Notifications on"}
           </Button>
           <Button variant="outline" size="sm" onClick={markAllRead} disabled={stats.unread === 0}>
@@ -179,16 +230,19 @@ function AlertsPage() {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid gap-3 sm:grid-cols-4">
         <StatCard label="Total" value={stats.total} />
         <StatCard label="Critical" value={stats.critical} accent="destructive" />
         <StatCard label="Warning" value={stats.warning} accent="warning" />
-        <StatCard label="Unread" value={stats.unread} accent="info" />
+        <StatCard label="New" value={stats.fresh} accent="info" />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as typeof filter)} className="flex-shrink-0">
+        <Tabs
+          value={filter}
+          onValueChange={(value) => setFilter(value as typeof filter)}
+          className="flex-shrink-0"
+        >
           <TabsList>
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="critical">Critical</TabsTrigger>
@@ -204,7 +258,7 @@ function AlertsPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search action or target…"
+            placeholder="Search action or target..."
             className="pl-8 font-mono text-xs"
           />
         </div>
@@ -224,32 +278,42 @@ function AlertsPage() {
       ) : (
         <Card className="overflow-hidden">
           <div className="divide-y divide-border">
-            {filtered.map((a) => {
-              const isRead = readIds.has(a.id);
+            {filtered.map((alert) => {
+              const isRead = readIds.has(alert.id);
               return (
                 <button
-                  key={a.id}
-                  onClick={() => toggleRead(a.id)}
+                  key={alert.id}
+                  onClick={() => toggleRead(alert.id)}
                   className={`flex w-full items-start gap-4 p-4 text-left transition-colors hover:bg-accent/30 ${
                     isRead ? "opacity-60" : ""
                   }`}
                 >
                   <Badge
                     variant="outline"
-                    className={`shrink-0 font-mono text-[10px] uppercase ${SEVERITY_STYLES[a.severity]}`}
+                    className={`shrink-0 font-mono text-[10px] uppercase ${SEVERITY_STYLES[alert.severity]}`}
                   >
-                    {a.severity}
+                    {alert.severity}
                   </Badge>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">{a.action_type}</p>
-                    {a.target && (
-                      <p className="break-all font-mono text-xs text-muted-foreground">→ {a.target}</p>
+                    <p className="text-sm font-medium text-foreground">{alert.action_type}</p>
+                    {alert.target && (
+                      <p className="break-all font-mono text-xs text-muted-foreground">
+                        -&gt; {alert.target}
+                      </p>
                     )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <p className="font-mono text-[11px] text-muted-foreground">
-                      {new Date(a.created_at).toLocaleString()}
+                      {new Date(alert.created_at).toLocaleString()}
                     </p>
+                    {newIds.has(alert.id) && (
+                      <Badge
+                        variant="outline"
+                        className="border-info/30 bg-info/10 font-mono text-[9px] uppercase text-info"
+                      >
+                        new
+                      </Badge>
+                    )}
                     {!isRead && (
                       <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-label="unread" />
                     )}

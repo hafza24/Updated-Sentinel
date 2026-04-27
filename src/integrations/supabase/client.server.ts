@@ -5,13 +5,25 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
+export class SupabaseAdminConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SupabaseAdminConfigError';
+  }
+}
+
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SUPABASE_URL = process.env.SUPABASE_URL?.trim();
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      'Missing Supabase server environment variables. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.'
+    const missingVars = [
+      !SUPABASE_URL ? 'SUPABASE_URL' : null,
+      !SUPABASE_SERVICE_ROLE_KEY ? 'SUPABASE_SERVICE_ROLE_KEY' : null,
+    ].filter(Boolean);
+
+    throw new SupabaseAdminConfigError(
+      `Missing Supabase server environment variable${missingVars.length === 1 ? '' : 's'}: ${missingVars.join(', ')}.`
     );
   }
 
@@ -35,3 +47,7 @@ export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdm
     return Reflect.get(_supabaseAdmin, prop, receiver);
   },
 });
+
+export function isSupabaseAdminConfigError(error: unknown): error is SupabaseAdminConfigError {
+  return error instanceof SupabaseAdminConfigError;
+}

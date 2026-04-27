@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Monitor, Plus, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { deriveDeviceRuntimeStatus, formatLastSeen } from "@/lib/device-health";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authed/devices")({
   head: () => ({
     meta: [
-      { title: "Devices — Sentinel Net" },
+      { title: "Devices - Sentinel Net" },
       { name: "description", content: "Manage registered agent devices on the Sentinel Net grid." },
     ],
   }),
@@ -77,10 +78,12 @@ function DevicesPage() {
             setDevices((prev) => [payload.new as Device, ...prev]);
           } else if (payload.eventType === "UPDATE") {
             setDevices((prev) =>
-              prev.map((d) => (d.id === (payload.new as Device).id ? (payload.new as Device) : d)),
+              prev.map((device) =>
+                device.id === (payload.new as Device).id ? (payload.new as Device) : device,
+              ),
             );
           } else if (payload.eventType === "DELETE") {
-            setDevices((prev) => prev.filter((d) => d.id !== (payload.old as Device).id));
+            setDevices((prev) => prev.filter((device) => device.id !== (payload.old as Device).id));
           }
         },
       )
@@ -128,7 +131,7 @@ function DevicesPage() {
       toast.error(error.message);
       return;
     }
-    setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, [field]: value } : d)));
+    setDevices((prev) => prev.map((device) => (device.id === id ? { ...device, [field]: value } : device)));
   };
 
   return (
@@ -203,52 +206,57 @@ function DevicesPage() {
         </Card>
       ) : (
         <div className="grid gap-3">
-          {devices.map((d) => (
-            <Card key={d.id} className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Monitor className="h-4 w-4 text-primary" />
-                    <h3 className="font-semibold text-foreground">{d.device_name}</h3>
-                    <Badge
-                      variant={d.status === "active" ? "default" : "secondary"}
-                      className={
-                        d.status === "active"
-                          ? "bg-success/15 text-success hover:bg-success/20"
-                          : "bg-muted text-muted-foreground"
-                      }
-                    >
-                      {d.status}
-                    </Badge>
+          {devices.map((device) => {
+            const runtimeStatus = deriveDeviceRuntimeStatus(device.status, device.last_seen);
+            const statusClass =
+              runtimeStatus === "online"
+                ? "border-success/30 bg-success/15 text-success hover:bg-success/20"
+                : runtimeStatus === "offline"
+                  ? "border-warning/30 bg-warning/15 text-warning hover:bg-warning/20"
+                  : "border-muted bg-muted/40 text-muted-foreground";
+
+            return (
+              <Card key={device.id} className="p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Monitor className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-foreground">{device.device_name}</h3>
+                      <Badge variant="outline" className={statusClass}>
+                        {runtimeStatus}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground sm:grid-cols-4">
+                      <span>HOST: {device.hostname ?? "-"}</span>
+                      <span>OS: {device.os ?? "-"}</span>
+                      <span>IP: {device.ip_address ?? "-"}</span>
+                      <span>LAST: {formatLastSeen(device.last_seen)}</span>
+                    </div>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground sm:grid-cols-4">
-                    <span>HOST: {d.hostname ?? "—"}</span>
-                    <span>OS: {d.os ?? "—"}</span>
-                    <span>IP: {d.ip_address ?? "—"}</span>
-                    <span>LAST: {d.last_seen ? new Date(d.last_seen).toLocaleString() : "never"}</span>
+                  <div className="flex flex-col items-end gap-2">
+                    <label className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">Firewall</span>
+                      <Switch
+                        checked={device.firewall_enabled}
+                        onCheckedChange={(value) => toggle(device.id, "firewall_enabled", value)}
+                        disabled={!isAdmin}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">Downloads</span>
+                      <Switch
+                        checked={device.download_restriction_enabled}
+                        onCheckedChange={(value) =>
+                          toggle(device.id, "download_restriction_enabled", value)
+                        }
+                        disabled={!isAdmin}
+                      />
+                    </label>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Firewall</span>
-                    <Switch
-                      checked={d.firewall_enabled}
-                      onCheckedChange={(v) => toggle(d.id, "firewall_enabled", v)}
-                      disabled={!isAdmin}
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Downloads</span>
-                    <Switch
-                      checked={d.download_restriction_enabled}
-                      onCheckedChange={(v) => toggle(d.id, "download_restriction_enabled", v)}
-                      disabled={!isAdmin}
-                    />
-                  </label>
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

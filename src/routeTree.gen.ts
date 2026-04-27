@@ -15,6 +15,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedWebhooksRouteImport } from './routes/_authed.webhooks'
 import { Route as AuthedTelemetryRouteImport } from './routes/_authed.telemetry'
+import { Route as AuthedTasksRouteImport } from './routes/_authed.tasks'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
 import { Route as AuthedSchedulesRouteImport } from './routes/_authed.schedules'
 import { Route as AuthedRiskRouteImport } from './routes/_authed.risk'
@@ -22,6 +23,7 @@ import { Route as AuthedRetentionRouteImport } from './routes/_authed.retention'
 import { Route as AuthedRequestsRouteImport } from './routes/_authed.requests'
 import { Route as AuthedProcessesRouteImport } from './routes/_authed.processes'
 import { Route as AuthedMyStatusRouteImport } from './routes/_authed.my-status'
+import { Route as AuthedLiveScreenRouteImport } from './routes/_authed.live-screen'
 import { Route as AuthedDownloadsRouteImport } from './routes/_authed.downloads'
 import { Route as AuthedDomainsRouteImport } from './routes/_authed.domains'
 import { Route as AuthedDevicesRouteImport } from './routes/_authed.devices'
@@ -33,6 +35,7 @@ import { Route as AuthedAlertsRouteImport } from './routes/_authed.alerts'
 import { Route as AuthedActivityRouteImport } from './routes/_authed.activity'
 import { Route as ApiPublicPurgeScreenshotsRouteImport } from './routes/api/public/purge-screenshots'
 import { Route as ApiPublicDispatchWebhooksRouteImport } from './routes/api/public/dispatch-webhooks'
+import { Route as ApiPublicDeviceCommandsRouteImport } from './routes/api/public/device-commands'
 import { Route as ApiPublicCreateSnapshotRouteImport } from './routes/api/public/create-snapshot'
 
 const SignupRoute = SignupRouteImport.update({
@@ -62,6 +65,11 @@ const AuthedWebhooksRoute = AuthedWebhooksRouteImport.update({
 const AuthedTelemetryRoute = AuthedTelemetryRouteImport.update({
   id: '/telemetry',
   path: '/telemetry',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTasksRoute = AuthedTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
@@ -97,6 +105,11 @@ const AuthedProcessesRoute = AuthedProcessesRouteImport.update({
 const AuthedMyStatusRoute = AuthedMyStatusRouteImport.update({
   id: '/my-status',
   path: '/my-status',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedLiveScreenRoute = AuthedLiveScreenRouteImport.update({
+  id: '/live-screen',
+  path: '/live-screen',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedDownloadsRoute = AuthedDownloadsRouteImport.update({
@@ -156,6 +169,11 @@ const ApiPublicDispatchWebhooksRoute =
     path: '/api/public/dispatch-webhooks',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicDeviceCommandsRoute = ApiPublicDeviceCommandsRouteImport.update({
+  id: '/api/public/device-commands',
+  path: '/api/public/device-commands',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicCreateSnapshotRoute = ApiPublicCreateSnapshotRouteImport.update({
   id: '/api/public/create-snapshot',
   path: '/api/public/create-snapshot',
@@ -175,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/devices': typeof AuthedDevicesRoute
   '/domains': typeof AuthedDomainsRoute
   '/downloads': typeof AuthedDownloadsRoute
+  '/live-screen': typeof AuthedLiveScreenRoute
   '/my-status': typeof AuthedMyStatusRoute
   '/processes': typeof AuthedProcessesRoute
   '/requests': typeof AuthedRequestsRoute
@@ -182,9 +201,11 @@ export interface FileRoutesByFullPath {
   '/risk': typeof AuthedRiskRoute
   '/schedules': typeof AuthedSchedulesRoute
   '/settings': typeof AuthedSettingsRoute
+  '/tasks': typeof AuthedTasksRoute
   '/telemetry': typeof AuthedTelemetryRoute
   '/webhooks': typeof AuthedWebhooksRoute
   '/api/public/create-snapshot': typeof ApiPublicCreateSnapshotRoute
+  '/api/public/device-commands': typeof ApiPublicDeviceCommandsRoute
   '/api/public/dispatch-webhooks': typeof ApiPublicDispatchWebhooksRoute
   '/api/public/purge-screenshots': typeof ApiPublicPurgeScreenshotsRoute
 }
@@ -201,6 +222,7 @@ export interface FileRoutesByTo {
   '/devices': typeof AuthedDevicesRoute
   '/domains': typeof AuthedDomainsRoute
   '/downloads': typeof AuthedDownloadsRoute
+  '/live-screen': typeof AuthedLiveScreenRoute
   '/my-status': typeof AuthedMyStatusRoute
   '/processes': typeof AuthedProcessesRoute
   '/requests': typeof AuthedRequestsRoute
@@ -208,9 +230,11 @@ export interface FileRoutesByTo {
   '/risk': typeof AuthedRiskRoute
   '/schedules': typeof AuthedSchedulesRoute
   '/settings': typeof AuthedSettingsRoute
+  '/tasks': typeof AuthedTasksRoute
   '/telemetry': typeof AuthedTelemetryRoute
   '/webhooks': typeof AuthedWebhooksRoute
   '/api/public/create-snapshot': typeof ApiPublicCreateSnapshotRoute
+  '/api/public/device-commands': typeof ApiPublicDeviceCommandsRoute
   '/api/public/dispatch-webhooks': typeof ApiPublicDispatchWebhooksRoute
   '/api/public/purge-screenshots': typeof ApiPublicPurgeScreenshotsRoute
 }
@@ -229,6 +253,7 @@ export interface FileRoutesById {
   '/_authed/devices': typeof AuthedDevicesRoute
   '/_authed/domains': typeof AuthedDomainsRoute
   '/_authed/downloads': typeof AuthedDownloadsRoute
+  '/_authed/live-screen': typeof AuthedLiveScreenRoute
   '/_authed/my-status': typeof AuthedMyStatusRoute
   '/_authed/processes': typeof AuthedProcessesRoute
   '/_authed/requests': typeof AuthedRequestsRoute
@@ -236,9 +261,11 @@ export interface FileRoutesById {
   '/_authed/risk': typeof AuthedRiskRoute
   '/_authed/schedules': typeof AuthedSchedulesRoute
   '/_authed/settings': typeof AuthedSettingsRoute
+  '/_authed/tasks': typeof AuthedTasksRoute
   '/_authed/telemetry': typeof AuthedTelemetryRoute
   '/_authed/webhooks': typeof AuthedWebhooksRoute
   '/api/public/create-snapshot': typeof ApiPublicCreateSnapshotRoute
+  '/api/public/device-commands': typeof ApiPublicDeviceCommandsRoute
   '/api/public/dispatch-webhooks': typeof ApiPublicDispatchWebhooksRoute
   '/api/public/purge-screenshots': typeof ApiPublicPurgeScreenshotsRoute
 }
@@ -257,6 +284,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/domains'
     | '/downloads'
+    | '/live-screen'
     | '/my-status'
     | '/processes'
     | '/requests'
@@ -264,9 +292,11 @@ export interface FileRouteTypes {
     | '/risk'
     | '/schedules'
     | '/settings'
+    | '/tasks'
     | '/telemetry'
     | '/webhooks'
     | '/api/public/create-snapshot'
+    | '/api/public/device-commands'
     | '/api/public/dispatch-webhooks'
     | '/api/public/purge-screenshots'
   fileRoutesByTo: FileRoutesByTo
@@ -283,6 +313,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/domains'
     | '/downloads'
+    | '/live-screen'
     | '/my-status'
     | '/processes'
     | '/requests'
@@ -290,9 +321,11 @@ export interface FileRouteTypes {
     | '/risk'
     | '/schedules'
     | '/settings'
+    | '/tasks'
     | '/telemetry'
     | '/webhooks'
     | '/api/public/create-snapshot'
+    | '/api/public/device-commands'
     | '/api/public/dispatch-webhooks'
     | '/api/public/purge-screenshots'
   id:
@@ -310,6 +343,7 @@ export interface FileRouteTypes {
     | '/_authed/devices'
     | '/_authed/domains'
     | '/_authed/downloads'
+    | '/_authed/live-screen'
     | '/_authed/my-status'
     | '/_authed/processes'
     | '/_authed/requests'
@@ -317,9 +351,11 @@ export interface FileRouteTypes {
     | '/_authed/risk'
     | '/_authed/schedules'
     | '/_authed/settings'
+    | '/_authed/tasks'
     | '/_authed/telemetry'
     | '/_authed/webhooks'
     | '/api/public/create-snapshot'
+    | '/api/public/device-commands'
     | '/api/public/dispatch-webhooks'
     | '/api/public/purge-screenshots'
   fileRoutesById: FileRoutesById
@@ -330,6 +366,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
   ApiPublicCreateSnapshotRoute: typeof ApiPublicCreateSnapshotRoute
+  ApiPublicDeviceCommandsRoute: typeof ApiPublicDeviceCommandsRoute
   ApiPublicDispatchWebhooksRoute: typeof ApiPublicDispatchWebhooksRoute
   ApiPublicPurgeScreenshotsRoute: typeof ApiPublicPurgeScreenshotsRoute
 }
@@ -376,6 +413,13 @@ declare module '@tanstack/react-router' {
       path: '/telemetry'
       fullPath: '/telemetry'
       preLoaderRoute: typeof AuthedTelemetryRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/tasks': {
+      id: '/_authed/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AuthedTasksRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings': {
@@ -425,6 +469,13 @@ declare module '@tanstack/react-router' {
       path: '/my-status'
       fullPath: '/my-status'
       preLoaderRoute: typeof AuthedMyStatusRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/live-screen': {
+      id: '/_authed/live-screen'
+      path: '/live-screen'
+      fullPath: '/live-screen'
+      preLoaderRoute: typeof AuthedLiveScreenRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/downloads': {
@@ -504,6 +555,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicDispatchWebhooksRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/device-commands': {
+      id: '/api/public/device-commands'
+      path: '/api/public/device-commands'
+      fullPath: '/api/public/device-commands'
+      preLoaderRoute: typeof ApiPublicDeviceCommandsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/create-snapshot': {
       id: '/api/public/create-snapshot'
       path: '/api/public/create-snapshot'
@@ -524,6 +582,7 @@ interface AuthedRouteChildren {
   AuthedDevicesRoute: typeof AuthedDevicesRoute
   AuthedDomainsRoute: typeof AuthedDomainsRoute
   AuthedDownloadsRoute: typeof AuthedDownloadsRoute
+  AuthedLiveScreenRoute: typeof AuthedLiveScreenRoute
   AuthedMyStatusRoute: typeof AuthedMyStatusRoute
   AuthedProcessesRoute: typeof AuthedProcessesRoute
   AuthedRequestsRoute: typeof AuthedRequestsRoute
@@ -531,6 +590,7 @@ interface AuthedRouteChildren {
   AuthedRiskRoute: typeof AuthedRiskRoute
   AuthedSchedulesRoute: typeof AuthedSchedulesRoute
   AuthedSettingsRoute: typeof AuthedSettingsRoute
+  AuthedTasksRoute: typeof AuthedTasksRoute
   AuthedTelemetryRoute: typeof AuthedTelemetryRoute
   AuthedWebhooksRoute: typeof AuthedWebhooksRoute
 }
@@ -545,6 +605,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedDevicesRoute: AuthedDevicesRoute,
   AuthedDomainsRoute: AuthedDomainsRoute,
   AuthedDownloadsRoute: AuthedDownloadsRoute,
+  AuthedLiveScreenRoute: AuthedLiveScreenRoute,
   AuthedMyStatusRoute: AuthedMyStatusRoute,
   AuthedProcessesRoute: AuthedProcessesRoute,
   AuthedRequestsRoute: AuthedRequestsRoute,
@@ -552,6 +613,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedRiskRoute: AuthedRiskRoute,
   AuthedSchedulesRoute: AuthedSchedulesRoute,
   AuthedSettingsRoute: AuthedSettingsRoute,
+  AuthedTasksRoute: AuthedTasksRoute,
   AuthedTelemetryRoute: AuthedTelemetryRoute,
   AuthedWebhooksRoute: AuthedWebhooksRoute,
 }
@@ -565,6 +627,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
   ApiPublicCreateSnapshotRoute: ApiPublicCreateSnapshotRoute,
+  ApiPublicDeviceCommandsRoute: ApiPublicDeviceCommandsRoute,
   ApiPublicDispatchWebhooksRoute: ApiPublicDispatchWebhooksRoute,
   ApiPublicPurgeScreenshotsRoute: ApiPublicPurgeScreenshotsRoute,
 }

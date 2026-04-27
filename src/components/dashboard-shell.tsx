@@ -22,6 +22,7 @@ import {
   HeartPulse,
   Database as DatabaseIcon,
   Camera,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,8 @@ const NAV: NavItem[] = [
   { to: "/activity", label: "Activity", icon: Radio },
   { to: "/devices", label: "Devices", icon: Monitor },
   { to: "/device-control", label: "Remote Control", icon: Terminal, adminOnly: true },
+  { to: "/live-screen", label: "Live Screen", icon: Eye, adminOnly: true },
+  { to: "/tasks", label: "Tasks", icon: Cpu, adminOnly: true },
   { to: "/risk", label: "Risk Scores", icon: ShieldAlert, adminOnly: true },
   { to: "/domains", label: "Domains", icon: Globe },
   { to: "/downloads", label: "Downloads", icon: Download },

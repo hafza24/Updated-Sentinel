@@ -853,6 +853,10 @@ export type Database = {
         | "force_sync"
         | "disable_network"
         | "enable_network"
+        | "shutdown_device"
+        | "kill_process"
+        | "start_stream"
+        | "stop_stream"
       device_status: "active" | "inactive" | "disabled"
       request_status: "pending" | "approved" | "rejected"
       request_type: "domain" | "download" | "uninstall"
@@ -1008,6 +1012,10 @@ export const Constants = {
         "force_sync",
         "disable_network",
         "enable_network",
+        "shutdown_device",
+        "kill_process",
+        "start_stream",
+        "stop_stream",
       ],
       device_status: ["active", "inactive", "disabled"],
       request_status: ["pending", "approved", "rejected"],

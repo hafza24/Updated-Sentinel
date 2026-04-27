@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { isSupabaseAdminConfigError, supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // Called every 5 min by pg_cron (and on-demand by admins via "Send test").
 // Picks pending webhook_deliveries, posts them to Slack/Discord/generic, marks status.
@@ -13,52 +13,63 @@ export const Route = createFileRoute("/api/public/dispatch-webhooks")({
 });
 
 async function handler() {
-  const { data: pending, error } = await supabaseAdmin
-    .from("webhook_deliveries")
-    .select("id, endpoint_id, payload, attempts, webhook_endpoints(provider, url, name, is_active)")
-    .eq("status", "pending")
-    .lte("attempts", 5)
-    .limit(50);
+  try {
+    const { data: pending, error } = await supabaseAdmin
+      .from("webhook_deliveries")
+      .select("id, endpoint_id, payload, attempts, webhook_endpoints(provider, url, name, is_active)")
+      .eq("status", "pending")
+      .lte("attempts", 5)
+      .limit(50);
 
-  if (error) {
-    return Response.json({ ok: false, error: error.message }, { status: 500 });
-  }
-
-  let sent = 0;
-  let failed = 0;
-
-  for (const row of pending ?? []) {
-    const ep = (row as any).webhook_endpoints;
-    if (!ep || !ep.is_active) continue;
-    const body = formatPayload(ep.provider, row.payload as Record<string, unknown>);
-
-    try {
-      const res = await fetch(ep.url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await supabaseAdmin
-        .from("webhook_deliveries")
-        .update({ status: "sent", sent_at: new Date().toISOString(), attempts: row.attempts + 1 })
-        .eq("id", row.id);
-      sent++;
-    } catch (e: any) {
-      const attempts = row.attempts + 1;
-      await supabaseAdmin
-        .from("webhook_deliveries")
-        .update({
-          status: attempts >= 5 ? "failed" : "pending",
-          attempts,
-          last_error: String(e?.message ?? e),
-        })
-        .eq("id", row.id);
-      failed++;
+    if (error) {
+      return Response.json({ ok: false, error: error.message }, { status: 500 });
     }
-  }
 
-  return Response.json({ ok: true, sent, failed, picked: pending?.length ?? 0 });
+    let sent = 0;
+    let failed = 0;
+
+    for (const row of pending ?? []) {
+      const ep = (row as any).webhook_endpoints;
+      if (!ep || !ep.is_active) continue;
+      const body = formatPayload(ep.provider, row.payload as Record<string, unknown>);
+
+      try {
+        const res = await fetch(ep.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await supabaseAdmin
+          .from("webhook_deliveries")
+          .update({ status: "sent", sent_at: new Date().toISOString(), attempts: row.attempts + 1 })
+          .eq("id", row.id);
+        sent++;
+      } catch (e: any) {
+        const attempts = row.attempts + 1;
+        await supabaseAdmin
+          .from("webhook_deliveries")
+          .update({
+            status: attempts >= 5 ? "failed" : "pending",
+            attempts,
+            last_error: String(e?.message ?? e),
+          })
+          .eq("id", row.id);
+        failed++;
+      }
+    }
+
+    return Response.json({ ok: true, sent, failed, picked: pending?.length ?? 0 });
+  } catch (error) {
+    console.error("dispatch-webhooks failed", error);
+    return Response.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unexpected server error while dispatching webhooks.",
+      },
+      { status: isSupabaseAdminConfigError(error) ? 503 : 500 },
+    );
+  }
 }
 
 function formatPayload(provider: string, p: Record<string, unknown>) {

@@ -5,9 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
+import { isDeviceOnline } from "@/lib/device-health";
 
 export const Route = createFileRoute("/_authed/telemetry")({
-  head: () => ({ meta: [{ title: "Agent Telemetry — Sentinel Net" }] }),
+  head: () => ({ meta: [{ title: "Agent Telemetry - Sentinel Net" }] }),
   component: TelemetryPage,
 });
 
@@ -31,15 +32,15 @@ interface Device {
   user_id: string;
 }
 
-function fmtUptime(s: number) {
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+function fmtUptime(seconds: number) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
 function fmtAgo(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -55,63 +56,63 @@ function TelemetryPage() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: hbs }, { data: devs }] = await Promise.all([
-        supabase
-          .from("agent_heartbeats")
-          .select("*")
-          .order("reported_at", { ascending: false })
-          .limit(500),
+      const [{ data: heartbeatRows }, { data: deviceRows }] = await Promise.all([
+        supabase.from("agent_heartbeats").select("*").order("reported_at", { ascending: false }).limit(500),
         supabase.from("devices").select("id, device_name, hostname, user_id"),
       ]);
-      // Reduce to one heartbeat per device (the most recent)
+
       const byDevice = new Map<string, Heartbeat>();
-      for (const h of (hbs as Heartbeat[]) ?? []) {
-        if (!byDevice.has(h.device_id)) byDevice.set(h.device_id, h);
+      for (const heartbeat of (heartbeatRows as Heartbeat[]) ?? []) {
+        if (!byDevice.has(heartbeat.device_id)) byDevice.set(heartbeat.device_id, heartbeat);
       }
+
       setLatest([...byDevice.values()]);
-      setDevices((devs as Device[]) ?? []);
+      setDevices((deviceRows as Device[]) ?? []);
       setLoading(false);
     })();
 
-    const ch = supabase
+    const channel = supabase
       .channel("hb-stream")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "agent_heartbeats" },
-        (p) => {
-          const next = p.new as Heartbeat;
+        (payload) => {
+          const next = payload.new as Heartbeat;
           setLatest((prev) => {
-            const without = prev.filter((h) => h.device_id !== next.device_id);
-            return [next, ...without];
+            const withoutCurrent = prev.filter((heartbeat) => heartbeat.device_id !== next.device_id);
+            return [next, ...withoutCurrent];
           });
         },
       )
       .subscribe();
+
     return () => {
-      supabase.removeChannel(ch);
+      supabase.removeChannel(channel);
     };
   }, []);
 
   const stats = {
     total: latest.length,
-    healthy: latest.filter((h) => h.watchdog_status === "healthy").length,
-    degraded: latest.filter((h) => h.watchdog_status === "degraded").length,
-    down: latest.filter((h) => h.watchdog_status === "down").length,
+    online: latest.filter((heartbeat) => isDeviceOnline(heartbeat.reported_at)).length,
+    stale: latest.filter((heartbeat) => !isDeviceOnline(heartbeat.reported_at)).length,
+    degraded: latest.filter((heartbeat) => heartbeat.watchdog_status === "degraded").length,
+    down: latest.filter((heartbeat) => heartbeat.watchdog_status === "down").length,
   };
 
   return (
     <div className="space-y-6">
       <div>
         <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-primary">FLEET</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">Agent Telemetry</h1>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight">Agent telemetry</h1>
         <p className="text-sm text-muted-foreground">
           {isAdmin ? "Live health from every Sentinel agent." : "Health of agents linked to your account."}
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-5">
         <Stat label="Reporting" value={stats.total} />
-        <Stat label="Healthy" value={stats.healthy} accent="success" />
+        <Stat label="Online" value={stats.online} accent="success" />
+        <Stat label="Stale" value={stats.stale} accent="warning" />
         <Stat label="Degraded" value={stats.degraded} accent="warning" />
         <Stat label="Down" value={stats.down} accent="destructive" />
       </div>
@@ -129,44 +130,58 @@ function TelemetryPage() {
         </Card>
       ) : (
         <Card className="divide-y divide-border">
-          {latest.map((h) => {
-            const dev = devices.find((d) => d.id === h.device_id);
-            const wdColor =
-              h.watchdog_status === "healthy"
+          {latest.map((heartbeat) => {
+            const device = devices.find((item) => item.id === heartbeat.device_id);
+            const online = isDeviceOnline(heartbeat.reported_at);
+            const watchdogClass =
+              heartbeat.watchdog_status === "healthy"
                 ? "bg-success/15 text-success"
-                : h.watchdog_status === "degraded"
+                : heartbeat.watchdog_status === "degraded"
                   ? "bg-warning/15 text-warning"
-                  : h.watchdog_status === "down"
+                  : heartbeat.watchdog_status === "down"
                     ? "bg-destructive/15 text-destructive"
                     : "bg-muted text-muted-foreground";
+
             return (
-              <div key={h.id} className="grid gap-3 p-4 md:grid-cols-6">
+              <div key={heartbeat.id} className="grid gap-3 p-4 md:grid-cols-7">
                 <div className="md:col-span-2">
-                  <p className="text-sm font-semibold">{dev?.device_name ?? "Unknown"}</p>
+                  <p className="text-sm font-semibold">{device?.device_name ?? "Unknown"}</p>
                   <p className="font-mono text-[11px] text-muted-foreground">
-                    {dev?.hostname ?? h.device_id.slice(0, 8)}
-                    {h.agent_version ? ` · v${h.agent_version}` : ""}
+                    {device?.hostname ?? heartbeat.device_id.slice(0, 8)}
+                    {heartbeat.agent_version ? ` - v${heartbeat.agent_version}` : ""}
                   </p>
                 </div>
-                <Badge variant="outline" className={`w-fit font-mono text-[10px] uppercase ${wdColor}`}>
-                  {h.watchdog_status}
+                <Badge variant="outline" className={`w-fit font-mono text-[10px] uppercase ${watchdogClass}`}>
+                  {heartbeat.watchdog_status}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className={
+                    online
+                      ? "w-fit border-success/30 bg-success/10 font-mono text-[10px] uppercase text-success"
+                      : "w-fit border-warning/30 bg-warning/10 font-mono text-[10px] uppercase text-warning"
+                  }
+                >
+                  {online ? "online" : "offline"}
                 </Badge>
                 <div className="flex items-center gap-1 text-xs">
                   <HardDrive className="h-3 w-3 text-muted-foreground" />
-                  <span className="font-mono">{fmtUptime(h.uptime_seconds)}</span>
+                  <span className="font-mono">{fmtUptime(heartbeat.uptime_seconds)}</span>
                 </div>
                 <div className="flex items-center gap-1 text-xs">
                   <Cpu className="h-3 w-3 text-muted-foreground" />
                   <span className="font-mono">
-                    {h.cpu_percent != null ? `${h.cpu_percent.toFixed(1)}%` : "—"}
+                    {heartbeat.cpu_percent != null ? `${heartbeat.cpu_percent.toFixed(1)}%` : "-"}
                   </span>
                   <MemoryStick className="ml-2 h-3 w-3 text-muted-foreground" />
-                  <span className="font-mono">{h.memory_mb != null ? `${h.memory_mb} MB` : "—"}</span>
+                  <span className="font-mono">
+                    {heartbeat.memory_mb != null ? `${heartbeat.memory_mb} MB` : "-"}
+                  </span>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Last sync: <span className="font-mono">{fmtAgo(h.last_sync_at)}</span>
+                  Last sync: <span className="font-mono">{fmtAgo(heartbeat.last_sync_at)}</span>
                   <br />
-                  Heard: <span className="font-mono">{fmtAgo(h.reported_at)}</span>
+                  Heard: <span className="font-mono">{fmtAgo(heartbeat.reported_at)}</span>
                 </div>
               </div>
             );
@@ -177,7 +192,15 @@ function TelemetryPage() {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: number; accent?: "success" | "warning" | "destructive" }) {
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: "success" | "warning" | "destructive";
+}) {
   const color =
     accent === "success"
       ? "text-success"
