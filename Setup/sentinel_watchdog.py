@@ -37,7 +37,7 @@ CHECK_INTERVAL = 15  # seconds between checks
 
 if getattr(sys, "frozen", False):
     INSTALL_DIR = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "SentinelNet"
-    DATA_DIR    = Path(os.environ.get("ProgramData",  r"C:\ProgramData"))   / "SentinelNet"
+    DATA_DIR    = INSTALL_DIR  # All data in C:\Program Files\SentinelNet\ (NOT ProgramData)
 else:
     INSTALL_DIR = Path(__file__).parent
     DATA_DIR    = Path(__file__).parent
@@ -45,9 +45,11 @@ else:
 AGENT_EXE = INSTALL_DIR / "sentinel_agent.exe"
 TRAY_EXE  = INSTALL_DIR / "sentinel_tray.exe"
 
-LOG_FILE  = DATA_DIR / "watchdog.log"
+LOG_FILE  = INSTALL_DIR / "watchdog.log"
+LOG_DIR   = INSTALL_DIR / "logs"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _log(msg: str) -> None:

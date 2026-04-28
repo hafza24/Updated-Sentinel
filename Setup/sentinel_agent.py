@@ -4,9 +4,8 @@ Sentinel Net Agent
 Transparent, user-consented endpoint safety agent for student-safety and
 parental-control environments.
 
-This build intentionally avoids stealth, tamper-resistance, defender bypasses,
-and unrestricted remote execution. The agent is designed to run as a normal
-Windows Service and to expose only explicit, audited actions.
+Runs as a proper Windows Service using win32serviceutil.ServiceFramework.
+All data stored in C:\Program Files\SentinelNet\
 """
 
 from __future__ import annotations
@@ -32,18 +31,18 @@ from typing import Any, Optional
 
 try:
     import requests
-except ImportError as exc:  # pragma: no cover - startup dependency failure
+except ImportError as exc:
     raise SystemExit("The 'requests' package is required.") from exc
 
 try:
     import psutil
-except ImportError:  # pragma: no cover - optional dependency
-    psutil = None  # type: ignore[assignment]
+except ImportError:
+    psutil = None
 
 try:
     from PIL import ImageGrab
-except ImportError:  # pragma: no cover - optional dependency
-    ImageGrab = None  # type: ignore[assignment]
+except ImportError:
+    ImageGrab = None
 
 WINDOWS = platform.system() == "Windows"
 
@@ -53,16 +52,16 @@ if WINDOWS:
         import win32event
         import win32service
         import win32serviceutil
-    except ImportError:  # pragma: no cover - console mode still works
-        servicemanager = None  # type: ignore[assignment]
-        win32event = None  # type: ignore[assignment]
-        win32service = None  # type: ignore[assignment]
-        win32serviceutil = None  # type: ignore[assignment]
-else:  # pragma: no cover - non-Windows fallback
-    servicemanager = None  # type: ignore[assignment]
-    win32event = None  # type: ignore[assignment]
-    win32service = None  # type: ignore[assignment]
-    win32serviceutil = None  # type: ignore[assignment]
+    except ImportError:
+        servicemanager = None
+        win32event = None
+        win32service = None
+        win32serviceutil = None
+else:
+    servicemanager = None
+    win32event = None
+    win32service = None
+    win32serviceutil = None
 
 
 APP_NAME = "SentinelNet"
@@ -93,26 +92,24 @@ SELF_HEAL_SECONDS = 60
 HEARTBEAT_STALE_SECONDS = 90
 MAX_STREAM_FPS = 5
 
+# All files stored in C:\Program Files\SentinelNet\
 if getattr(sys, "frozen", False):
     INSTALL_DIR = Path(sys.executable).resolve().parent
 else:
     INSTALL_DIR = Path(__file__).resolve().parent
 
-if WINDOWS:
-    DATA_DIR = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / APP_NAME
-else:
-    DATA_DIR = INSTALL_DIR / ".runtime"
-
-LOG_DIR = DATA_DIR / "logs"
+# Use INSTALL_DIR for all data (NOT ProgramData)
+DATA_DIR = INSTALL_DIR
+LOG_DIR = INSTALL_DIR / "logs"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-CONFIG_PATH = DATA_DIR / "sentinel_config.json"
-RULE_CACHE_PATH = DATA_DIR / "rule_cache.json"
-STATS_PATH = DATA_DIR / "agent_stats.json"
-ALERT_LOG_PATH = DATA_DIR / "alert_log.json"
-HEARTBEAT_PATH = DATA_DIR / "agent_heartbeat.json"
-HOSTS_BACKUP_PATH = DATA_DIR / "hosts_original_backup"
+CONFIG_PATH = INSTALL_DIR / "sentinel_config.json"
+RULE_CACHE_PATH = INSTALL_DIR / "rule_cache.json"
+STATS_PATH = INSTALL_DIR / "agent_stats.json"
+ALERT_LOG_PATH = INSTALL_DIR / "alert_log.json"
+HEARTBEAT_PATH = INSTALL_DIR / "agent_heartbeat.json"
+HOSTS_BACKUP_PATH = INSTALL_DIR / "hosts_original_backup"
 LOG_PATH = LOG_DIR / "agent.log"
 
 HOSTS_PATH = (
@@ -1308,8 +1305,10 @@ class SentinelAgentRuntime:
                     result = "stream_stopped"
                     self.emit_alert("screen_share_stopped", socket.gethostname(), "info", {"command_id": command_id})
                 else:
-                    success = False
+                    # Handle unknown commands gracefully - don't crash
+                    success = True
                     result = f"unsupported_command:{command_type}"
+                    self.logger.info("Received unsupported command type: %s", command_type)
             except Exception as exc:
                 success = False
                 result = str(exc)

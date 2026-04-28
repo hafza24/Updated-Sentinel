@@ -83,7 +83,7 @@ TRAY_TASK_NAME     = "Sentinel Net Tray"
 
 if getattr(sys, "frozen", False):
     INSTALL_DIR = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / APP_NAME
-    DATA_DIR    = Path(os.environ.get("ProgramData",  r"C:\ProgramData"))   / APP_NAME
+    DATA_DIR    = INSTALL_DIR  # All data in C:\Program Files\SentinelNet\ (NOT ProgramData)
 else:
     INSTALL_DIR = Path(__file__).parent
     DATA_DIR    = Path(__file__).parent
@@ -95,6 +95,7 @@ WATCHDOG_EXE    = INSTALL_DIR / "sentinel_watchdog.exe"
 AGENT_HEARTBEAT = DATA_DIR / "agent_heartbeat.json"
 ALERT_LOG_FILE  = DATA_DIR / "alert_log.json"
 HOSTS_BACKUP    = DATA_DIR / "hosts_original_backup"
+LOG_DIR         = DATA_DIR / "logs"
 
 SUPABASE_URL      = "https://kwctyqxdiocjmsekymft.supabase.co"
 SUPABASE_ANON_KEY = (

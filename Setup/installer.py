@@ -62,12 +62,13 @@ TRAY_TASK_NAME     = "Sentinel Net Tray"
 AGENT_VERSION      = "1.0.0"
 
 INSTALL_DIR = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / APP_NAME
-DATA_DIR    = Path(os.environ.get("ProgramData",  r"C:\ProgramData"))   / APP_NAME
+DATA_DIR    = INSTALL_DIR  # All data in C:\Program Files\SentinelNet\ (NOT ProgramData)
 
 CONFIG_PATH       = DATA_DIR / "sentinel_config.json"
 AGENT_EXE_PATH    = INSTALL_DIR / "sentinel_agent.exe"
 TRAY_EXE_PATH     = INSTALL_DIR / "sentinel_tray.exe"
 WATCHDOG_EXE_PATH = INSTALL_DIR / "sentinel_watchdog.exe"
+LOG_DIR           = DATA_DIR / "logs"
 
 # Brand palette
 BG            = "#0b1020"
@@ -206,11 +207,18 @@ def _add_windows_defender_exclusion(path: Path) -> None:
     if platform.system() != "Windows":
         return
     try:
+        # Add exclusion via PowerShell
         subprocess.run(
             ["powershell", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
              f"Add-MpPreference -ExclusionPath '{path}'"],
             capture_output=True, check=False,
-            creationflags=0x08000000,  # CREATE_NO_WINDOW
+            creationflags=0x08000000,
+        )
+        # Also add via netsh for legacy compatibility
+        subprocess.run(
+            ["netsh", "advfirewall", "set", "currentprofile", "state", "on"],
+            capture_output=True, check=False,
+            creationflags=0x08000000,
         )
     except Exception:
         pass
@@ -391,6 +399,7 @@ def install_scheduled_task(exe: Path, task_name: str) -> None:
 
     xml_path = DATA_DIR / f"task_{task_name.replace(' ', '_')}.xml"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     xml_path.write_text(task_xml, encoding="utf-16")
 
     result = subprocess.run(
@@ -409,6 +418,49 @@ def install_scheduled_task(exe: Path, task_name: str) -> None:
         )
         if result2.returncode != 0:
             raise RuntimeError(f"Scheduled task creation failed: {result2.stderr.strip()}")
+
+
+def install_windows_service(exe: Path) -> None:
+    """Install the agent as a Windows Service using sc.exe."""
+    if platform.system() != "Windows":
+        return
+    
+    service_name = "SentinelNetAgent"
+    display_name = "Sentinel Net Agent"
+    description = "Sentinel Net endpoint safety agent for student safety and parental control."
+    
+    # Delete existing service if present
+    subprocess.run(["sc", "stop", service_name], capture_output=True, check=False, creationflags=0x08000000)
+    subprocess.run(["sc", "delete", service_name], capture_output=True, check=False, creationflags=0x08000000)
+    time.sleep(1)
+    
+    # Create service with LocalSystem account and auto-start
+    result = subprocess.run(
+        ["sc", "create", service_name,
+         "binPath=", f'"{exe}" --service',
+         "start=", "auto",
+         "DisplayName=", display_name,
+         "obj=", "LocalSystem"],
+        capture_output=True, text=True,
+        creationflags=0x08000000,
+    )
+    
+    if result.returncode != 0:
+        raise RuntimeError(f"Service creation failed: {result.stderr.strip() or result.stdout.strip()}")
+    
+    # Set service description
+    subprocess.run(
+        ["sc", "description", service_name, description],
+        capture_output=True, check=False, creationflags=0x08000000,
+    )
+    
+    # Configure failure actions (restart on failure)
+    subprocess.run(
+        ["sc", "failure", service_name,
+         "reset=", "86400",
+         "actions=", "restart/60000/restart/60000/restart/60000"],
+        capture_output=True, check=False, creationflags=0x08000000,
+    )
 
 
 def add_to_registry_startup(exe: Path) -> None:
@@ -746,15 +798,18 @@ class InstallerApp(tk.Tk):
             _add_windows_defender_exclusion(DATA_DIR)
             self.log_line("      ✓ Defender exclusions added", SUCCESS)
 
-            # ── Step 7: Registry startup ───────────────────────────────
-            self.log_line("[7/9] Adding to system startup registry...")
+            # ── Step 7: Install Windows Service ───────────────────────────────
+            self.log_line("[7/9] Installing Windows Service...")
+            install_windows_service(agent_exe)
+            self.log_line("      ✓ Windows Service 'SentinelNetAgent' installed", SUCCESS)
+
+            # ── Step 8: Registry startup (fallback) ───────────────────────────
+            self.log_line("[8/9] Adding to system startup registry (fallback)...")
             add_to_registry_startup(agent_exe)
             self.log_line("      ✓ Registry startup entries created", SUCCESS)
 
-            # ── Step 8: Scheduled tasks ────────────────────────────────
-            self.log_line("[8/9] Installing scheduled tasks...")
-            install_scheduled_task(agent_exe, TASK_NAME)
-            self.log_line(f"      ✓ '{TASK_NAME}' task created", SUCCESS)
+            # ── Step 9: Scheduled tasks for tray and watchdog ─────────────────
+            self.log_line("[9/9] Installing scheduled tasks for tray and watchdog...")
 
             install_scheduled_task(tray_exe, TRAY_TASK_NAME)
             self.log_line(f"      ✓ '{TRAY_TASK_NAME}' task created", SUCCESS)
@@ -766,17 +821,27 @@ class InstallerApp(tk.Tk):
                 except Exception as e:
                     self.log_line(f"      ⚠ Watchdog task: {e}", WARNING)
 
-            # ── Step 9: Launch ─────────────────────────────────────────
-            self.log_line("[9/9] Launching agent processes...")
-            for label, exe in [("Agent", agent_exe),
-                                ("Watchdog", watchdog_exe),
-                                ("Tray", tray_exe)]:
-                if exe.exists():
-                    try:
-                        launch_detached(exe)
-                        self.log_line(f"      ✓ {label} launched (hidden)", SUCCESS)
-                    except Exception as e:
-                        self.log_line(f"      ⚠ {label}: {e}", WARNING)
+            # ── Step 10: Start service and launch ─────────────────────────────
+            self.log_line("[10/10] Starting service and launching tray...")
+            
+            # Start the Windows Service
+            subprocess.run(["sc", "start", "SentinelNetAgent"], capture_output=True, check=False, creationflags=0x08000000)
+            time.sleep(2)
+            
+            # Launch tray application
+            try:
+                launch_detached(tray_exe)
+                self.log_line("      ✓ Tray launched (hidden)", SUCCESS)
+            except Exception as e:
+                self.log_line(f"      ⚠ Tray: {e}", WARNING)
+            
+            # Launch watchdog (as backup)
+            if watchdog_exe.exists():
+                try:
+                    launch_detached(watchdog_exe)
+                    self.log_line("      ✓ Watchdog launched (hidden)", SUCCESS)
+                except Exception as e:
+                    self.log_line(f"      ⚠ Watchdog: {e}", WARNING)
 
             self.log_line("")
             self.log_line("✓ Installation complete. Lab computer is now managed.", SUCCESS)
